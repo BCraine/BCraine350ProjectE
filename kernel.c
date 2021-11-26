@@ -4,11 +4,14 @@ extern int interrupt(int,int,int,int,int);
 void printChar(char*);
 void readString(char*);
 void readSector(char*,int);
+void writeSector(char*,int);
 void handleInterrupt(int,int,int,int);
 void readFile(char*,char*);
 void executeProgram(char*);
 extern void launchProgram(int);
 void terminate(int,int,int,int);
+void deleteFile(char*);
+void writeFile(char*,char*,int);
 
 void main(){
 
@@ -64,14 +67,124 @@ void main(){
 	//interrupt(0x21,4,"tstpr1",0,0);
 	//interrupt(0x21,5,"tstpr2",0,0);
 	//interrupt(0x21,5,0,0,0);
-	
+	/*
 	int sectorsRead;
 	char buffer[13312];
 	readFile(buffer, "messag",&sectorsRead);
 	printChar(buffer);
+	*/
+
+	char buffer[512];
+	//int sector;
+	makeInterrupt21();
+	//interrupt(0x21,6,buffer,&sector,0);
+	//interrupt(0x21,7,buffer,0,0);
+	
+	interrupt(0x21,8,"this is a test message","testmg",3);
+	interrupt(0x21,5,0,0,0);
 	
 	while(1);
 	
+}
+
+void writeFile(char* buffer,char* filename,int numberOfSectors){
+	char dirBuffer[512];
+	char map[512];
+	int sector[256];
+	int entry;
+	int i;
+	int j;
+
+	
+	interrupt(0x21,2,dirBuffer,2,0);
+	interrupt(0x21,2,map,1,0);
+
+
+	for(entry=0;entry<512;entry+=32){
+		if(dirBuffer[entry]==0){
+			break;
+		}
+	}
+	for(i=0;i<6;i++){
+		dirBuffer[entry+i]=filename[i];
+	}
+	for(i=0;i<numberOfSectors;i++){
+		for(j=3;j<512;j++){
+			if(map[j]==0){
+				map[j]=0xFF;
+				sector[i]=j;
+				dirBuffer[entry+6+i]=sector[i];
+				writeSector(buffer+512*i,sector[i]);
+				break;
+			}	
+		}
+	}
+	for(i=entry+numberOfSectors+6;i<32;i++){
+		dirBuffer[i]=0;
+	}
+	interrupt(0x21,6,dirBuffer,2,0);
+	interrupt(0x21,6,map,1,0);
+	return;
+}	
+
+void deleteFile(char* fileName){
+	char dirBuffer[512];
+	char cantFindFile[15];
+	char map[512];
+	int entry;
+	int fileFound;
+	int symb;
+	int sector;
+	
+	interrupt(0x21,2,dirBuffer,2,0);
+	interrupt(0x21,2,map,1,0);
+
+	for(entry = 0; entry<512;entry+=32){
+		fileFound=1;
+
+		for(symb=0;symb<6;symb++){
+			if(dirBuffer[entry+symb] != fileName[symb]){
+				fileFound=0;
+				break;
+
+			}
+		}
+		if(fileFound==1){
+			break;
+		}
+	}
+	if(fileFound==0){
+		cantFindFile[0]='C';
+		cantFindFile[1]='A';
+		cantFindFile[2]='N';
+		cantFindFile[3]='T';
+		cantFindFile[4]=' ';
+		cantFindFile[5]='F';
+		cantFindFile[6]='I';
+		cantFindFile[7]='N';
+		cantFindFile[8]='D';
+		cantFindFile[9]=' ';
+		cantFindFile[10]='F';
+		cantFindFile[11]='I';
+		cantFindFile[12]='L';
+		cantFindFile[13]='E';
+		cantFindFile[14]=0xD;
+		cantFindFile[15]='\0';
+
+		interrupt(0x21,0,cantFindFile,0,0);
+		return;
+	}
+	for(sector=6;sector<32;sector++){
+		int sectorNumber;
+		sectorNumber = dirBuffer[entry+sector];
+		if(sectorNumber!=0){
+			map[sectorNumber]=0;
+		}
+	}
+	dirBuffer[entry]=0;
+	interrupt(0x21,6,dirBuffer,2,0);
+	interrupt(0x21,6,map,1,0);
+	return;
 }
 
 void printChar(char* chars){
@@ -109,6 +222,18 @@ void readSector(char* buffer, int sector){
 	trackNumber = 0;
 	interrupt(0x13,2*256+1, buffer, trackNumber*256+relSector,head*256+0x80);
 }
+
+void writeSector(char* buffer, int sector){
+	int head;
+	int relSector;
+	int trackNumber;
+
+	relSector = sector+1;
+	head=0;
+	trackNumber=0;
+	interrupt(0x13,3*256+1,buffer,trackNumber*256+relSector,head*256+0x80);
+}
+
 
 void readFile(char* name, char* buffer, int* sectorsRead){
 	char dirBuffer[512];
