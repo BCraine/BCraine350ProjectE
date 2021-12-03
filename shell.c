@@ -1,6 +1,7 @@
 //Brandon Craine
 
 void syscall(int,int,int,int,int);
+extern void enableInterrupts();
 
 void main(){
 	
@@ -28,6 +29,8 @@ void main(){
 	int checkCre;
 	int offset;
 	int addedOffset;
+	char kill[6];
+	int checkKill;	
 
 	type[0] = 't';
 	type[1] = 'y';
@@ -53,6 +56,13 @@ void main(){
 	dir[2] = 'r';
 	dir[3] = ' ';
 	dir[4] = '\0';
+
+	kill[0] = 'k';
+	kill[1] = 'i';
+	kill[2] = 'l';
+	kill[3] = 'l';
+	kill[4] = ' ';
+	kill[5] = '\0';
 
 	del[0] = 'd';
 	del[1] = 'e';
@@ -97,6 +107,14 @@ void main(){
 	for(i=0;i<5;i++){
 		if(h[i]!=copy[i]){
 			checkCopy=0;
+			break;
+		}
+	}
+
+	checkKill = 1;
+	for(i=0;i<5;i++){
+		if(h[i]!=kill[i]){
+			checkKill=0;
 			break;
 		}
 	}
@@ -158,6 +176,9 @@ void main(){
 			offset=addedOffset-1;
 		}
 		syscall(0x21,8,hCopy+4,textfl,1);
+	}
+	if(checkKill==1){
+		syscall(0x21,9,h+5,0,0);
 	}
 
 	if(checkDir ==1){

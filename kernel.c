@@ -1,6 +1,7 @@
 // Brandon Craine
 
 extern int interrupt(int,int,int,int,int);
+extern void enableInterrupts();
 void printChar(char*);
 void readString(char*);
 void readSector(char*,int);
@@ -12,6 +13,14 @@ extern void launchProgram(int);
 void terminate(int,int,int,int);
 void deleteFile(char*);
 void writeFile(char*,char*,int);
+void handleTimerInterrupt(int,int);
+void killProcess(int);
+
+int processActive[8];
+int processStackPointer[8];
+int processWaiting[8];
+int processWaitingFor[8];
+int currentProcess;
 
 void main(){
 
@@ -74,16 +83,99 @@ void main(){
 	printChar(buffer);
 	*/
 
-	char buffer[512];
+	//char buffer[512];
 	//int sector;
+
+	int j;
+	char shell[6];
+	for(j=0;j<8;j++){
+		processStackPointer[j]=0xff00;
+		processActive[j]=0;
+		processWaiting[j]=0;
+		processWaitingFor[j]=0;
+	}
+
+	currentProcess=-1;
 	makeInterrupt21();
+	shell[0]='s';
+	shell[1]='h';
+	shell[2]='e';
+	shell[3]='l';
+	shell[4]='l';
+	shell[5]='\0';
 	//interrupt(0x21,6,buffer,&sector,0);
 	//interrupt(0x21,7,buffer,0,0);
 	
-	interrupt(0x21,8,"this is a test message","testmg",3);
-	interrupt(0x21,5,0,0,0);
+	//interrupt(0x21,8,"this is a test message","testmg",3);
+	//interrupt(0x21,5,0,0,0);
+	executeProgram(&shell);
+	makeTimerInterrupt();
+
 	
 	while(1);
+	
+}
+
+void killProcess(int number){
+	
+	int h;
+	int dataseg;
+	dataseg=setKernelDataSegment();
+	
+	for(h=0;h<8;h++){
+		if(processWaitingFor[h]==number){
+			processWaiting[h]=0;
+		}
+	}
+	processActive[number]=0;
+	restoreDataSegment(dataseg);
+
+}
+
+void handleTimerInterrupt(int segment, int sp){
+	int i;
+	int addedSegment;
+	int addedSP;
+	int allProcInactive;
+	char bufferPrint[16];
+
+	/*
+	bufferPrint[0] = 'T';
+	bufferPrint[1] = 'i';
+	bufferPrint[2] = 'c';
+	bufferPrint[3] = '\0';
+	printChar(bufferPrint);
+	*/
+	int dataseg;
+	dataseg=setKernelDataSegment();
+	if(currentProcess != -1){
+		processStackPointer[currentProcess] = sp;
+	}
+	allProcInactive = 1;
+
+	for(i=0;i<8;i++){
+		if(processActive[i]==1){
+			allProcInactive=0;
+			break;
+		}
+	}
+
+	if(allProcInactive){
+		returnFromTimer(segment,sp);
+	}
+	currentProcess=(currentProcess+1)%8;
+	while(processActive[currentProcess]==0){
+		currentProcess=(currentProcess+1)%8;
+
+		if(processWaiting[currentProcess]==1){
+			currentProcess=(currentProcess+1)%8;
+		}
+	}
+	addedSegment=0x1000*(currentProcess+2);
+	addedSP=processStackPointer[currentProcess];
+
+	restoreDataSegment(dataseg);
+	returnFromTimer(addedSegment,addedSP);
 	
 }
 
@@ -299,22 +391,40 @@ void readFile(char* name, char* buffer, int* sectorsRead){
 	return;
 
 }
-void executeProgram(char* name){
+void executeProgram(char* name, int waitFor){
 	char buffer[13312];
-	int loc;
+	int i;
+	int address;
+	int seg;
+	int dataseg;
 
-	readFile(name, buffer);
+	dataseg=setKernelDataSegment();
+
+	for(i=0;i<8;i++){
+		if(processActive[i]==0){
+			break;
+		}
+	}
+	if(waitFor==1){
+		processWaitingFor[currentProcess]=i;
+	}
+	processStackPointer[i]=0xff00;
+	processActive[i]=1;
+
+	restoreDataSegment(dataseg);
+
+	seg = 0x1000*(i+2);
+	readFile(name,buffer);
 	
-	for(loc = 0; loc< 13312; loc+=1){
-		putInMemory(0x2000,loc,buffer[loc]);
-	}	
-	launchProgram(0x2000);
-
+	for(address = 0;address<13312;address++){
+		putInMemory(seg,address,buffer[address]);
+	}
+	initializeProgram(seg);
 }
 
 
 void terminate(int ax, int bx, int cx, int dx){
-	char shell[6];
+	/*char shell[6];
 
 	if (ax==4){
 		executeProgram(bx,cx);
@@ -331,7 +441,13 @@ void terminate(int ax, int bx, int cx, int dx){
 	}
 	else{
 		printChar("error\0");
-	}
+	}*/
+	int dataseg;
+	dataseg=setKernelDataSegment();
+	processActive[currentProcess]=0;
+
+	restoreDataSegment(dataseg);
+	
 }
 
 void handleInterrupt21(int ax, int bx, int cx, int dx){
